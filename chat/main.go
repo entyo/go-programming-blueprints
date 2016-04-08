@@ -1,11 +1,19 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sync"
 	"text/template"
+
+	"github.com/entyo/go-oreilly/trace"
+	"github.com/stretchr/gomniauth"
+	"github.com/stretchr/gomniauth/providers/facebook"
+	"github.com/stretchr/gomniauth/providers/github"
+	"github.com/stretchr/gomniauth/providers/google"
 )
 
 type templateHandler struct {
@@ -18,16 +26,35 @@ func (t *templateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	t.once.Do(func() {
 		t.templ = template.Must(template.ParseFiles(filepath.Join("templates", t.filename)))
 	})
-	t.templ.Execute(w, nil)
-}
+	t.templ.Execute(w, r)
+}builderrorundefined
 
 func main() {
-	http.Handle("/assets/", http.StripPrefix("/assets", http.FileServer(http.Dir("assets"))))
-	http.Handle("/", &templateHandler{filename: "chat.html"})
+	var port = flag.String("port", "8080", "利用するポート")
+	flag.Parse()
+
+	gomniauth.SetSecurityKey("セキュリティーキー")
+	gomniauth.WithProviders(
+		facebook.New("881257098683113", "5c26ea0784d6d63fb70749732319d82f", "http://localhost:8080/auth/callback/facebook"),
+		github.New("310f8481d87d4736a2ed","3fcc1ce2e5c535983f011ad851d9addf3b98d3a0", "http://localhost:8080/auth/callback/github"),
+		google.New("939350194331-9tit6jbq84cnv88sih1psgib9m94611p.apps.googleusercontent.com", "uTGSB6StgcuvqwbwgDbAFl0c", "http://localhost:8080/auth/callback/google"),
+	)
+
 	r := newRoom()
+	r.tracer = trace.New(os.Stdout)
+
+	http.Handle("/chat", MustAuth(&templateHandler{filename: "chat.html"}))
+	http.Handle("/login", &templateHandler{filename: "login.html"})
+	// http.Handlerインターフェイスを持たない関数も、
+	// http.HandleFuncでハンドラとして扱える。
+	http.HandleFunc("/auth/", loginHandler)
 	http.Handle("/room", r)
+
 	go r.run()
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+
+	log.Println("Webサーバを起動します。ポート:", *port)
+	var addr = ":" + *port
+	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatal("ListenAndServe:", err)
 	}
 }
