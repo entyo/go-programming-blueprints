@@ -5,17 +5,28 @@ import (
 	"io"
 )
 
-type Tracer struct {
+type tracer struct {
 	out io.Writer
 }
 
-func (t Tracer) Trace(a ...interface{}) {
-	if t.out == nil {
-		return
-	}
-	fmt.Fprintln(t.out, a...)
+type Tracer interface {
+	Trace(...interface{})
 }
 
 func New(w io.Writer) Tracer {
-	return Tracer{out: w}
+	return &tracer{out: w}
+}
+
+func (t *tracer) Trace(a ...interface{}) {
+	t.out.Write([]byte(fmt.Sprint(a...)))
+	t.out.Write([]byte("\n"))
+}
+
+type nilTracer struct{}
+
+func (t *nilTracer) Trace(a ...interface{}) {}
+
+// OffはTraceメソッドの呼び出しを無視するTracerを返す
+func Off() Tracer {
+	return &nilTracer{}
 }
