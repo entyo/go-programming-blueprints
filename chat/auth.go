@@ -1,18 +1,41 @@
 package main
 
 import (
+	"crypto/md5"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
+
+	"github.com/stretchr/gomniauth"
+	"github.com/stretchr/objx"
 )
 
-type authHander struct {
+import gomniauthcommon "github.com/stretchr/gomniauth/common"
+
+// ChatUser はAvatarのURLを生成するのに必要な情報をまとめた型
+type ChatUser interface {
+	UniqueID() string
+	AvatarURL() string
+}
+
+type chatUser struct {
+	gomniauthcommon.User
+	uniqueID string
+}
+
+func (u chatUser) UniqueID() string {
+	return u.uniqueID
+}
+
+type authHandler struct {
 	next http.Handler
 }
 
-func (h *authHander) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if _, err := r.Cookie("auth"); err == http.ErrNoCookie {
+func (h *authHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("auth")
+	if err == http.ErrNoCookie || cookie.Value == "" {
 		w.Header().Set("Location", "/login")
 		w.WriteHeader(http.StatusTemporaryRedirect)
 	} else if err != nil {
@@ -22,8 +45,9 @@ func (h *authHander) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// MustAuth は、http.Handlerをラップし、認証機能を追加する
 func MustAuth(handler http.Handler) http.Handler {
-	return &authHander{next: handler}
+	return &authHandler{next: handler}
 }
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
@@ -34,10 +58,55 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	provider := segs[3]
 	switch action {
 	case "login":
-		log.Println("TODO: ログイン処理", provider)
+		provider, err := gomniauth.Provider(provider)
+		if err != nil {
+			log.Fatalln("認証プロバイダーの取得に失敗しちゃいました><", provider, "-", err)
+		}
+		loginURL, err := provider.GetBeginAuthURL(nil, nil)
+		if err != nil {
+			log.Fatalln("GetBeginAuthURLの呼び出し中にエラーですっ><")
+		}
+		w.Header().Set("Location", loginURL)
+		w.WriteHeader(http.StatusTemporaryRedirect)
+	case "callback":
+		provider, err := gomniauth.Provider(provider)
+		if err != nil {
+			log.Fatalln("認証プロバイダーの取得に失敗しちゃいました><", provider, "-", err)
+		}
+
+		creds, err := provider.CompleteAuth(objx.MustFromURLQuery(r.URL.RawQuery))
+		if err != nil {
+			log.Fatalln("はゎゎ…認証を完了できませんでした…", provider, "-", err)
+		}
+
+		user, err := provider.GetUser(creds)
+		if err != nil {
+			log.Fatalln("ユーザの取得に失敗しちゃいました><", provider, "-", err)
+		}
+
+		chatUser := &chatUser{User: user}
+		m := md5.New()
+		io.WriteString(m, strings.ToLower(user.Name()))
+		chatUser.uniqueID = fmt.Sprintf("%x", m.Sum(nil))
+		avatarURL, err := avatars.GetAvatarURL(chatUser)
+		if err != nil {
+			log.Fatalln("GetAvatarURLに失敗しました", "-", err)
+		}
+
+		authCookieValue := objx.New(map[string]interface{}{
+			// メールアドレスのハッシュをCookieに保存
+			"userID":     chatUser.uniqueID,
+			"name":       user.Name(),
+			"avatar_url": avatarURL,
+		}).MustBase64()
+		http.SetCookie(w, &http.Cookie{
+			Name:  "auth",
+			Value: authCookieValue,
+			Path:  "/"})
+		w.Header()["Location"] = []string{"/chat"}
+		w.WriteHeader(http.StatusTemporaryRedirect)
 	default:
 		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprintf(w, "アクション%sには非対応です", action)
+		fmt.Fprintf(w, "ユーザを取得できなかったのです…", action)
 	}
-
 }

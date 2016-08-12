@@ -2,55 +2,92 @@
 <html>
 
 <head>
-  <meta charset="utf-8">
-  <title>チャット</title>
-  <style>
-    input {
-      display: block;
-    }
+<meta charset="utf-8">
+<title>チャット</title>
+<link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css">
+<style>
+  input {
+    display: block;
+  }
 
-    ul {
-      list-style: none;
-    }
-  </style>
-  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js" charset="utf-8"></script>
+  ul#messages {
+    list-style: none;
+  }
+  ul#messages {
+    margin-bottom: 2px;
+  }
+  ul#messages {
+    margin-right: 10px;
+  }
+</style>
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js" charset="utf-8"></script>
 </head>
 
 <body>
-  <h1>WebSocketを使ったチャットアプリケーション</h1>
-  <ul id="messages"></ul>
-  <form id="chatbox">
-    <textarea></textarea>
-    <input type="submit" name="name" value="送信">
+
+<h1>女子中学生</h1>
+<div class="container">
+  <div class="panel panel-default">
+    <div class="panel-body">
+      <ul id="messages"></ul>
+    </div>
+  </div>
+  <form id="chatbox" role="form">
+    <div class="form-group">
+      <label for="messages">{{.UserData.name}}からメッセージを送信</label>
+      または、<a href="/logout">サインアウト</a>
+      <textarea id="message" class="form-control"></textarea>
+    </div>
+    <input type="submit" value="送信" class="btn btn-default" />
   </form>
-  <script type="text/javascript">
-    $(function() {
-      var socket = null;
-      var msgBox = $("#chatbox textarea");
-      var messages = $("#messages");
-      $("#chatbox").submit(function() {
-        if (!msgBox.val()) return false;
-        if (!socket) {
-          alert("Error: Failed to make connection by WebSocket");
-          return false;
-        }
-        socket.send(msgBox.val());
-        msgBox.val("");
+</div>
+
+<script type="text/javascript">
+  $(function() {
+    var socket = null;
+    var msgBox = $("#chatbox textarea");
+    var messages = $("#messages");
+    $("#chatbox").submit(function() {
+      if (!msgBox.val()) return false;
+      if (!socket) {
+        alert("Error: Failed to make connection by WebSocket");
         return false;
-      });
-      if (!window["WebSocket"]) {
-        alert("Error: Your browser doesn't support WebSocket");
-      } else {
-        socket = new WebSocket("ws://{{.Host}}/room");
-        socket.onclose = function() {
-          alert("Connection has been closed");
-        }
-        socket.onmessage = function(e) {
-          messages.append($("<li>").text(e.data));
-        }
       }
+      socket.send(JSON.stringify({"Message": msgBox.val()}));
+      msgBox.val("");
+      return false;
     });
-  </script>
+    if (!window["WebSocket"]) {
+      alert("Error: Your browser doesn't support WebSocket");
+    } else {
+      socket = new WebSocket("ws://{{.Host}}/room");
+      socket.onclose = function() {
+        alert("Connection has been closed");
+      }
+      socket.onmessage = function(e) { // e は event を表す
+        var msg = eval("("+e.data+")");
+        var date = new Date(Date.parse(msg.When));
+        var options = {
+          weekday: "long", year: "numeric", month: "short",
+          day: "numeric", hour: "2-digit", minute: "2-digit"
+        };
+        var date_str = date.toLocaleDateString("ja-JP", options);
+        messages.append(
+          $("<li>").append(
+            $("<img>").attr("title", msg.Name).css({
+              width: 50,
+              verticalAlign: "middle"
+            }).attr("src", msg.AvatarURL),
+            $("<strong>").text(msg.Name + ": "),
+            $("<span>").text(msg.Message),
+            $("<span>").text(" (" + date_str +   ")")
+          )
+        );
+      }
+    }
+  });
+</script>
+
 </body>
 
 </html>
