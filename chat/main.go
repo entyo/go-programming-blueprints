@@ -69,8 +69,6 @@ func main() {
 	http.Handle("/upload", &templateHandler{filename: "upload.html"})
 	http.Handle("/chat", MustAuth(&templateHandler{filename: "chat.html"}))
 	http.Handle("/login", &templateHandler{filename: "login.html"})
-	// http.Handlerインターフェイスを持たない関数も、
-	// http.HandleFuncでハンドラとして扱える。
 	http.HandleFunc("/auth/", loginHandler)
 	http.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{
