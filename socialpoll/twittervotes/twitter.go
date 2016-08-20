@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/garyburd/go-oauth/oauth"
 	"github.com/joeshaw/envdecode"
 )
 
@@ -48,10 +49,10 @@ var (
 
 func setupTwitterAuth() {
 	var ts struct {
-		ConsumerKey    string `env: "SP_TWITTER_KEY, required"`
-		ConsumerSecret string `env: "SP_TWITTER_SECRET, required"`
-		AccessToken    string `env: "SP_TWITTER_ACCESSTOKEN, required"`
-		AccessSecret   string `env: "SP_TWITTER_ACCESSSECRET", required`
+		ConsumerKey    string `env:"SP_TWITTER_KEY,required"`
+		ConsumerSecret string `env:"SP_TWITTER_SECRET,required"`
+		AccessToken    string `env:"SP_TWITTER_ACCESSTOKEN,required"`
+		AccessSecret   string `env:"SP_TWITTER_ACCESSSECRET,required"`
 	}
 	if err := envdecode.Decode(&ts); err != nil {
 		log.Fatalln(err)
