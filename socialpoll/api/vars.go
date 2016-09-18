@@ -10,7 +10,7 @@ var (
 	vars     map[*http.Request]map[string]interface{}
 )
 
-// OpenVars は定義された変数varsを初期化し、varsの引数に対応した箇所も初期化する
+// OpenVars はvarsを初期化し、varsの引数に対応した箇所も初期化する
 func OpenVars(r *http.Request) {
 	varsLock.Lock()
 	if vars == nil {
@@ -20,14 +20,14 @@ func OpenVars(r *http.Request) {
 	varsLock.Unlock()
 }
 
-// CloseVars は、varsから引数に対応した値を削除する
+// CloseVars は、varsからhttpリクエストに対応した値を削除する
 func CloseVars(r *http.Request) {
 	varsLock.Lock()
 	delete(vars, r)
 	varsLock.Unlock()
 }
 
-// GetVar は、varsの引数に対応した箇所を参照しその値を返す
+// GetVar は、httpリクエストとkeyに対応した値をマップから入手する
 func GetVar(r *http.Request, key string) interface{} {
 	varsLock.RLock()
 	value := vars[r][key]
@@ -35,7 +35,7 @@ func GetVar(r *http.Request, key string) interface{} {
 	return value
 }
 
-// SetVar は、varsの引数に対応した場所を参照し、そこに任意の値をセットする
+// SetVar は、httpリクエストとkeyに対応した箇所に任意の値をセットする
 func SetVar(r *http.Request, key string, value interface{}) {
 	varsLock.Lock()
 	vars[r][key] = value

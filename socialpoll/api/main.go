@@ -1,13 +1,36 @@
 package main
 
 import (
+	"flag"
+	"log"
 	"net/http"
+	"time"
 
-	"labix.org/v2/mgo"
+	"github.com/stretchr/graceful"
+
+	"gopkg.in/mgo.v2"
 )
 
 func main() {
+	var (
+		port  = flag.String("port", "8080", "エンドポイントのアドレス")
+		mongo = flag.String("mongo", "localhost", "MongoDBのアドレス")
+	)
+	flag.Parse()
 
+	log.Println("MongoDBに接続します", *mongo)
+	db, err := mgo.Dial(*mongo)
+	if err != nil {
+		log.Fatalln("MongoDBへの接続に失敗しました:", err)
+	}
+	defer db.Close()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/polls/", withCORS(withVars(withData(db, withAPIKey(handlePolls)))))
+	log.Println("Webサーバを開始します。ポート:", *port)
+
+	graceful.Run(":"+*port, 1*time.Second, mux)
+	log.Println("停止します...")
 }
 
 func withAPIKey(fn http.HandlerFunc) http.HandlerFunc {
@@ -44,5 +67,7 @@ func withVars(fn http.HandlerFunc) http.HandlerFunc {
 func withCORS(fn http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Expose-Headers", "Location")
+		fn(w, r)
 	}
 }
