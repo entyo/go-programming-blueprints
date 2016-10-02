@@ -2,3 +2,7 @@
 !*.*
 !*/
 /socialpoll/twittervotes/setup.sh
+ballots.*
+local.*
+mongod.*
+nsqd.*
