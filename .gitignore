@@ -2,7 +2,10 @@
 !*.*
 !*/
 /socialpoll/twittervotes/setup.sh
+/backup/cmds/backupd/archive/*
+/backup/cmds/backupd/hoge*/*
 ballots.*
 local.*
 mongod.*
 nsqd.*
+!/chat/*

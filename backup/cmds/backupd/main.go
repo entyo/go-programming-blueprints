@@ -59,7 +59,7 @@ func main() {
 			return true
 		}
 		m.Paths[path.Path] = path.Hash
-		return true
+		return false
 	})
 	if fatalErr != nil {
 		return
