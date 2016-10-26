@@ -16,7 +16,8 @@ type Archiver interface {
 
 type zipper struct{}
 
-// var ZIP Archiver = (*zipper)(nil) // nilを*zipper型にキャスト
+// ZIP はArchiver型の変数をnilで初期化し、*zipper型にキャストしたもの
+var ZIP Archiver = (*zipper)(nil) // nilを*zipper型にキャスト
 // ・ZIP というexportedなinterface{}型の変数に代入しておくことで、実装を外部に見せない。
 //   こうすることで、外部への影響なしに内部の実装を変更できる
 // ・*zipperがArchiveメソッドを実装していないと、以下のようにアサーションが出る。
