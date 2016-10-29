@@ -3,19 +3,20 @@ package main
 import (
 	"log"
 	"os"
-	"os/signal"
-	"sync"
-	"syscall"
-	"time"
 
 	"github.com/bitly/go-nsq"
+
+	"context"
+
+	"os/signal"
+	"syscall"
 
 	"labix.org/v2/mgo"
 )
 
 var db *mgo.Session
 
-func dialDB() error {
+func dialdb() error {
 	var err error
 	log.Println("MongoDBにダイヤル中: localhost")
 	db, err = mgo.Dial("localhost")
@@ -42,59 +43,32 @@ func loadOptions() ([]string, error) {
 	return options, iter.Err()
 }
 
-func publishVotes(votes <-chan string) <-chan struct{} {
-	stopChan := make(chan struct{}, 1)
+func publishVotes(votes <-chan string) {
 	pub, _ := nsq.NewProducer("localhost:4150", nsq.NewConfig())
-	go func() {
-		for vote := range votes {
-			pub.Publish("votes", []byte(vote))
-		}
-		log.Println("Publisher: 停止中です")
-		pub.Stop()
-		log.Println("Publisher: 停止しました")
-		stopChan <- struct{}{}
-	}()
-	return stopChan
+	for vote := range votes {
+		pub.Publish("votes", []byte(vote))
+	}
+	log.Println("Publisher: 停止中です")
+	pub.Stop()
+	log.Println("Publisher: 停止しました")
 }
 
 func main() {
-	var stoplock sync.Mutex
-	stop := false
-	stopChan := make(chan struct{}, 1)
+	ctx, cancel := context.WithCancel(context.Background())
 	signalChan := make(chan os.Signal, 1)
 	go func() {
-		<-signalChan // <- はチャネルからの受信を試みる演算子
-		stoplock.Lock()
-		stop = true
-		stoplock.Unlock()
-		log.Println("停止します...")
-		stopChan <- struct{}{}
-		closeConn()
+		<-signalChan
+		cancel()
+		log.Println("停止します")
 	}()
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
 
-	if err := dialDB(); err != nil {
-		log.Println("MongoDBへのダイヤルに失敗しました", err)
+	if err := dialdb(); err != nil {
+		log.Fatalln("MongoDBへのダイヤルに失敗しました:", err)
 	}
 	defer closedb()
 
-	votes := make(chan string) // 投票結果のためのチャネル
-	publisherStoppedChan := publishVotes(votes)
-	twitterStoppedChan := startTwitterStream(stopChan, votes)
-
-	go func() {
-		for {
-			time.Sleep(1 * time.Minute)
-			closeConn()
-			stoplock.Lock()
-			if stop {
-				stoplock.Unlock()
-				break
-			}
-			stoplock.Unlock()
-		}
-	}()
-	<-twitterStoppedChan
-	close(votes)
-	<-publisherStoppedChan
+	votes := make(chan string) // 投票結果用
+	go twitterStream(ctx, votes)
+	publishVotes(votes)
 }

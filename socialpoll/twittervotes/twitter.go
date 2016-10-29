@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"log"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"context"
 
 	"github.com/garyburd/go-oauth/oauth"
 	"github.com/joeshaw/envdecode"
@@ -74,85 +77,105 @@ var (
 	httpClient    *http.Client
 )
 
-func makeRequest(req *http.Request, paramas url.Values) (*http.Response, error) {
+func makeRequest(query url.Values) (*http.Request, error) {
 	authSetupOnce.Do(func() {
 		setupTwitterAuth()
-		httpClient = &http.Client{
-			Transport: &http.Transport{
-				Dial: dial,
-			},
-		}
 	})
-	formEnc := paramas.Encode()
+	const endpoint = "https://stream.twitter.com/1.1/statuses/filter.json"
+
+	req, err := http.NewRequest("POST", endpoint, strings.NewReader(query.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	formEnc := query.Encode()
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Content-Length", strconv.Itoa(len(formEnc)))
-	req.Header.Set("Authorization", authClient.AuthorizationHeader(creds, "POST", req.URL, paramas))
-	return httpClient.Do(req)
+	ah := authClient.AuthorizationHeader(creds, "POST", req.URL, query)
+	req.Header.Set("Authorization", ah)
+	return req, err
 }
 
 type tweet struct {
 	Text string
 }
 
-func readFromTwitter(votes chan<- string) {
-	optinos, err := loadOptions()
+func readFromTwitter(ctx context.Context, votes chan<- string) {
+	options, err := loadOptions()
 	if err != nil {
 		log.Println("選択肢の読み込みに失敗しました:", err)
 		return
 	}
 
-	u, err := url.Parse("https://stream.twitter.com/1.1/statuses/filter.json")
+	query := make(url.Values)
+	query.Set("track", strings.Join(options, ","))
+	req, err := makeRequest(query)
 	if err != nil {
-		log.Println("URLの解析に失敗しました:", err)
+		log.Println("検索リクエストの生成に失敗しました:", err)
 		return
 	}
 
-	query := make(url.Values)
-	query.Set("track", strings.Join(optinos, ","))
-	req, err := http.NewRequest("POST", u.String(), strings.NewReader(query.Encode()))
+	client := &http.Client{}
+	if deadline, ok := ctx.Deadline(); ok {
+		client.Timeout = deadline.Sub(time.Now())
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
-		log.Println("検索リクエストの生成に失敗しました:", err)
+		log.Println("検索のリクエストに失敗しました:", err)
+		return
 	}
+	done := make(chan struct{})
+	defer func() { <-done }() // goroutineが終了してから値を返す
+	defer resp.Body.Close()   // 値を返す前にresp.Bodyを閉じる
 
-	res, err := makeRequest(req, query)
-	if err != nil {
-		log.Println("検索のリクエストに失敗しました")
-	}
-
-	reader = res.Body
-	decoder := json.NewDecoder(reader)
-	for {
-		var tweet tweet
-		if err := decoder.Decode(&tweet); err != nil {
-			break
-		}
-		for _, option := range optinos {
-			if strings.Contains(strings.ToLower(tweet.Text), strings.ToLower(option)) {
-				log.Println("投票:", option)
-				votes <- option
-			}
-		}
-	}
-}
-
-func startTwitterStream(stopchan <-chan struct{}, votes chan<- string) <-chan struct{} {
-	stoppedchan := make(chan struct{}, 1)
 	go func() {
-		defer func() {
-			stoppedchan <- struct{}{}
-		}()
+		defer close(done)
+		log.Println("resp:", resp.StatusCode)
+		if resp.StatusCode != 200 {
+			var buf bytes.Buffer
+			io.Copy(&buf, resp.Body)
+			log.Println("resp body: %s", buf.String())
+			return
+		}
+		// resp.BodyのJSONをデコードして、optionにマッチしたvotesに送信
+		decoder := json.NewDecoder(resp.Body)
 		for {
-			select {
-			case <-stopchan:
-				log.Println("Twitterへの問い合わせを終了します...")
-				return
-			default:
-				log.Println("Twitterに問い合わせます...")
-				readFromTwitter(votes)
-				log.Println("(待機中)")
-				time.Sleep(10 * time.Second) // 待機してから再接続
+			var tweet tweet
+			if err := decoder.Decode(&tweet); err != nil {
+				break
+			}
+			log.Println("tweet:", tweet)
+			for _, option := range options {
+				if strings.Contains(strings.ToLower(tweet.Text), strings.ToLower(option)) {
+					log.Println("投票:", option)
+					votes <- option
+				}
 			}
 		}
 	}()
-	return stoppedchan
+	select {
+	case <-ctx.Done():
+	case <-done:
+	}
+}
+
+func readFromTwitterWithTimeout(ctx context.Context, timeout time.Duration, votes chan<- string) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	readFromTwitter(ctx, votes)
+}
+
+func twitterStream(ctx context.Context, votes chan<- string) {
+	defer close(votes)
+	for {
+
+		readFromTwitterWithTimeout(ctx, 1*time.Minute, votes)
+		log.Println("待機中")
+		select {
+		case <-ctx.Done():
+			log.Println("Twitterに問い合わせを終了します")
+			return
+		case <-time.After(10 * time.Second):
+		}
+	}
 }
