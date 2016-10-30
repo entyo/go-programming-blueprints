@@ -28,7 +28,7 @@ func main() {
 		}
 	}()
 	var (
-		interval = flag.Int("interval", 10, "チェックの間隔(秒単位)")
+		interval = flag.Duration("interval", 10*time.Second, "チェックの間隔(秒単位)")
 		archive  = flag.String("archive", "archive", "アーカイブの保存先")
 		dbpath   = flag.String("db", "./db", "filedbへのパス")
 	)
@@ -77,7 +77,7 @@ Loop:
 	// http://qiita.com/ksato9700/items/6228d4eb6d5b282f82f6
 	for {
 		select {
-		case <-time.After(time.Duration(*interval) * time.Second): // time.Secondがflag.Duration型のため変換する(goでは型の違う数値同士の計算はできない)
+		case <-time.After(*interval):
 			check(m, col)
 		case <-signalChan:
 			// おわり
